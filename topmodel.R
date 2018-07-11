@@ -1,194 +1,150 @@
+install.packages("quanteda") 
+library(readtext)
+require(stringi)
+
+library(tm)
+require(quanteda)
+require(quanteda)
+library(NLP)
+library(tm)
+library(SnowballC)
 library(topicmodels)
-library(tidytext)
-library(ggplot2)
-library(dplyr)
-library(tidyr)
-library(gutenbergr)
-library(stringr)
-library(ggplot2)
+library(LDAvis)
+library(ldatuning)
 library(mallet)
+library(ggplot2)
 
-data("AssociatedPress")
-AssociatedPress
-# set a seed so that the output of the model is predictable
-ap_lda <- LDA(AssociatedPress, k = 2, control = list(seed = 1234))
-ap_lda
+library(readtext)
+require(stringi)
 
-ap_topics <- tidy(ap_lda, matrix = "beta")
-ap_topics
+library(tm)
+require(quanteda)
 
-ap_top_terms <- ap_topics %>%
-  group_by(topic) %>%
-  top_n(10, beta) %>%
-  ungroup() %>%
-  arrange(topic, -beta)
+library(wordcloud)
+library(RColorBrewer)
+###sesuaikan dengan folder anda
+setwd("D:/PDF")
+DATA_DIR <- system.file("/", package = "readtext")
+##stopwordind <-readtext(paste0(DATA_DIR, "eriku/topikmodel/stopword.txt"))
 
-ap_top_terms %>%
-  mutate(term = reorder(term, beta)) %>%
-  ggplot(aes(term, beta, fill = factor(topic))) +
-  geom_col(show.legend = FALSE) +
-  facet_wrap(~ topic, scales = "free") +
-  coord_flip()
+###sesuikan dengan folder yg berisi file stopword.txt
 
-beta_spread <- ap_topics %>%
-  mutate(topic = paste0("topic", topic)) %>%
-  spread(topic, beta) %>%
-  filter(topic1 > .001 | topic2 > .001) %>%
-  mutate(log_ratio = log2(topic2 / topic1))
+xx<- scan("D:/topmodel/stopword.txt", what="", sep="\n")
+##stopwordind$text
+###stopword <- c("dari","ini","untuk","sebagaimana","yang","dengan","dimaksud","dan","danatau","atau","pasal","ayat","pada","oleh","tentang","dalam");
+#### sesuaikan dengan directory/folder data undang-undang anda.
 
-beta_spread
+txts <-readtext(paste0(DATA_DIR, "D:/PDF/*.pdf"))
 
-ap_documents <- tidy(ap_lda, matrix = "gamma")
-ap_documents
+txts$doc_id[1:97]
+txts$text[1]
+write.csv(txts$doc_id[1:97],file=paste("datafile.csv"))
 
-tidy(AssociatedPress) %>%
-  filter(document == 6) %>%
-  arrange(desc(count))
-
-titles <- c("Twenty Thousand Leagues under the Sea", "The War of the Worlds",
-            "Pride and Prejudice", "Great Expectations")
-
-books <- gutenberg_works(title %in% titles) %>%
-  gutenberg_download(meta_fields = "title")
+articles.corpus <- Corpus(VectorSource(txts))
 
 
-# divide into documents, each representing one chapter
-by_chapter <- books %>%
-  group_by(title) %>%
-  mutate(chapter = cumsum(str_detect(text, regex("^chapter ", ignore_case = TRUE)))) %>%
-  ungroup() %>%
-  filter(chapter > 0) %>%
-  unite(document, title, chapter)
+# make each letter lowercase
+articles.corpus = tm_map(articles.corpus, content_transformer(tolower))
+# remove punctuation
+articles.corpus = tm_map(articles.corpus, removePunctuation)
+#remove numbers
+articles.corpus = tm_map(articles.corpus, removeNumbers);
+# remove generic and custom stopwords
+stopword = c(xx,"the","and","per","hari","satu","dua","tiga","empat","puluh","ratus", "best","dari","ini","untuk","sebagaimana","yang","dengan","dimaksud","dan","danatau","atau","pasal","ayat","pada","oleh","tentang","dalam");
+articles.corpus = tm_map(articles.corpus, removeWords, stopword)
+articles.corpus = tm_map(articles.corpus, removeWords, xx)
 
-# split into words
-by_chapter_word <- by_chapter %>%
-  unnest_tokens(word, text)
+#articles.corpus <- tm_map(articles.corpus, stemDocument);
+articleTdm = TermDocumentMatrix(articles.corpus, control = list(minWordLength = 3));
 
-# find document-word counts
-word_counts <- by_chapter_word %>%
-  anti_join(stop_words) %>%
-  count(document, word, sort = TRUE) %>%
-  ungroup()
+m <- as.matrix(articleTdm)
+v <- sort(rowSums(m),decreasing=TRUE)
+d <- data.frame(word = names(v),freq=v)
+head(d, 10)
 
-word_counts
+set.seed(1234)
+wordcloud(words = d$word, freq = d$freq, min.freq = 50,
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
 
-chapters_dtm <- word_counts %>%
-  cast_dtm(document, word, n)
+findFreqTerms(articleTdm, lowfreq = 150)
+barplot(d[1:25,]$freq, las = 2, names.arg = d[1:25,]$word,
+        col ="lightblue", main ="Most frequent words",
+        ylab = "Word frequencies")
 
-chapters_dtm
+findAssocs(articleTdm, terms = "gubernur", corlimit = 0.8)
+##################
+articleDtm = DocumentTermMatrix(articles.corpus, control = list(minWordLength = 3));
+###############
+DTM_test = DocumentTermMatrix(articles.corpus, control = list(minWordLength = 3))
 
-chapters_lda <- LDA(chapters_dtm, k = 4, control = list(seed = 1234))
-chapters_lda
+m <- as.matrix(DTM_test)
+v <- sort(colSums(m),decreasing=TRUE)
+words <- names(v)
+d <- data.frame(word=words, freq=v)
+wordcloud(d$word,d$freq,min.freq=50)
 
-chapter_topics <- tidy(chapters_lda, matrix = "beta")
-chapter_topics
+plot(tdm, corThreshold = 0.2, weighting = TRUE)
+## End(Not run)
 
-top_terms <- chapter_topics %>%
-  group_by(topic) %>%
-  top_n(5, beta) %>%
-  ungroup() %>%
-  arrange(topic, -beta)
-
-top_terms
-
-
-top_terms %>%
-  mutate(term = reorder(term, beta)) %>%
-  ggplot(aes(term, beta, fill = factor(topic))) +
-  geom_col(show.legend = FALSE) +
-  facet_wrap(~ topic, scales = "free") +
-  coord_flip()
-
-chapters_gamma <- tidy(chapters_lda, matrix = "gamma")
-chapters_gamma
-
-chapters_gamma <- chapters_gamma %>%
-  separate(document, c("title", "chapter"), sep = "_", convert = TRUE)
-
-chapters_gamma
-
-# reorder titles in order of topic 1, topic 2, etc before plotting
-chapters_gamma %>%
-  mutate(title = reorder(title, gamma * topic)) %>%
-  ggplot(aes(factor(topic), gamma)) +
-  geom_boxplot() +
-  facet_wrap(~ title)
-
-chapter_classifications <- chapters_gamma %>%
-  group_by(title, chapter) %>%
-  top_n(1, gamma) %>%
-  ungroup()
-
-chapter_classifications
-book_topics <- chapter_classifications %>%
-  count(title, topic) %>%
-  group_by(title) %>%
-  top_n(1, n) %>%
-  ungroup() %>%
-  transmute(consensus = title, topic)
-
-chapter_classifications %>%
-  inner_join(book_topics, by = "topic") %>%
-  filter(title != consensus)
-
-assignments <- augment(chapters_lda, data = chapters_dtm)
-assignments
-
-assignments <- assignments %>%
-  separate(document, c("title", "chapter"), sep = "_", convert = TRUE) %>%
-  inner_join(book_topics, by = c(".topic" = "topic"))
-
-assignments
-
-assignments %>%
-  count(title, consensus, wt = count) %>%
-  group_by(title) %>%
-  mutate(percent = n / sum(n)) %>%
-  ggplot(aes(consensus, title, fill = percent)) +
-  geom_tile() +
-  scale_fill_gradient2(high = "red", label = percent_format()) +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1),
-        panel.grid = element_blank()) +
-  labs(x = "Book words were assigned to",
-       y = "Book words came from",
-       fill = "% of assignments")
-
-wrong_words <- assignments %>%
-  filter(title != consensus)
-
-wrong_words
-
-wrong_words %>%
-  count(title, consensus, term, wt = count) %>%
-  ungroup() %>%
-  arrange(desc(n))
-
-word_counts %>%
-  filter(word == "flopson")
+#########
 
 
-# create a vector with one string per chapter
-collapsed <- by_chapter_word %>%
-  anti_join(stop_words, by = "word") %>%
-  mutate(word = str_replace(word, "'", "")) %>%
-  group_by(document) %>%
-  summarize(text = paste(word, collapse = " "))
+articleDtm2 <- removeSparseTerms(articleDtm, sparse=0.98)
+articleDtm
+ vocab<-inspect(articleDtm2[1:1,])
+#dim(vocab)
+k = 10;
+SEED = 1234;
+article.lda <- LDA(articleDtm2, k, method="Gibbs", control=list(seed = SEED))
+lda.topics <- as.matrix(topics(article.lda,10))
+lda.topics
+lda.terms <- terms(article.lda,10)
+lda.terms
+lda.topics <- as.matrix(terms(article.lda,10))
+lda.topics
+topics(article.lda,1)
 
-# create an empty file of "stopwords"
-file.create(empty_file <- tempfile())
-docs <- mallet.import(collapsed$document, collapsed$text, empty_file)
+#######################
+##Set parameters for Gibbs sampling
+burnin <- 4000
+iter <- 2000
+thin <- 500
+seed <-list(2003,5,63,100001,765)
+nstart <- 5
+best <- TRUE
+#Number of topics
+k <- 10
+#Run LDA using Gibbs sampling
+ldaOut <-LDA(articleDtm2,k, method="Gibbs", control=list(nstart=nstart, seed = seed, best=best, burnin = burnin, iter = iter, thin=thin))
 
-mallet_model <- MalletLDA(num.topics = 4)
-mallet_model$loadDocuments(docs)
-mallet_model$train(100)
+#write out results
+#docs to topics
+ldaOut.topics <- as.matrix(topics(ldaOut))
+write.csv(ldaOut.topics,file=paste("LDAGibbsbb",k,"DocsToTopics.csv"))
 
-# word-topic pairs
-tidy(mallet_model)
+#top 6 terms in each topic
+ldaOut.terms <- as.matrix(terms(ldaOut,10))
+dim(ldaOut.terms)
+write.csv(ldaOut.terms,file=paste("LDAGibbsbb",k,"TopicsToTerms.csv"))
 
-# document-topic pairs
-tidy(mallet_model, matrix = "gamma")
 
-# column needs to be named "term" for "augment"
-term_counts <- rename(word_counts, term = word)
-augment(mallet_model, term_counts)
+#probabilities associated with each topic assignment
+topicProbabilities <- as.data.frame(ldaOut@gamma)
+write.csv(topicProbabilities,file=paste("LDAGibbsbbb",k,"TopicProbabilities.csv"))
+ 
+
+#Find relative importance of top 2 topics
+topic1ToTopic2 <- lapply(1:nrow(dtm),function(x)
+sort(topicProbabilities[x,])[k]/sort(topicProbabilities[x,])[k-1])
+
+
+#Find relative importance of second and third most important topics
+topic2ToTopic3 <- lapply(1:nrow(dtm),function(x)
+sort(topicProbabilities[x,])[k-1]/sort(topicProbabilities[x,])[k-2])
+ 
+
+#write to file
+write.csv(topic1ToTopic2,file=paste("LDAGibbsbb",k,"Topic1ToTopic2.csv"))
+write.csv(topic2ToTopic3,file=paste("LDAGibbsbb",k,"Topic2ToTopic3.csv"))
+###################
